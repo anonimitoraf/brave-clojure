@@ -104,7 +104,7 @@
   [board max-pos pos]
   (let [pegged-board (assoc-in board [pos :pegged] true)]
     (reduce (fn [board-so-far connect-fn] (connect-fn board-so-far max-pos pos))
-            board
+            pegged-board
             [connect-right connect-down-left connect-down-right])))
 
 (defn new-board
@@ -127,6 +127,13 @@
 (defn place-peg [board pos] (change-peg-status board pos true))
 (defn remove-peg [board pos] (change-peg-status board pos false))
 
+(defn multiple-peg-operations
+  [board poss operation]
+  (reduce (fn [board-so-far pos]
+            (operation board-so-far pos))
+          board
+          poss))
+
 (defn pegged?
   "Does the position have a peg in it?"
   [board pos]
@@ -136,6 +143,158 @@
   "Take peg out of pos1 and place it in pos2"
   [board pos1 pos2]
   (place-peg (remove-peg board pos1) pos2))
+
+(defn valid-moves
+  "Return a map of all valid moves for pos, where the key is the
+  destination and the value is the jumped position"
+  [board pos]
+  (let [connections (get-in board [pos :connections])
+        not-pegged? (complement pegged?)]
+    (into {} (filter (fn [[dest-pos in-between-pos]]
+                       (and (not-pegged? board dest-pos)
+                            (pegged? board in-between-pos)))
+                     connections))))
+(defn valid-move?
+  "Return jumped position if the move from src to dest is valid, nil
+  otherwise"
+  [board src dest]
+  (get (valid-moves board src) dest))
+
+(defn make-move
+  "Move peg from src to dest, removing jumped peg"
+  [board src dest]
+  (if-let [jumped (valid-move? board src dest)]
+    (remove-peg (move-peg board src dest) jumped)
+    ;; TODO: Maybe it should error if invalid move
+    ;; instead of just returning the original board
+    board))
+
+;; TODO: Do this properly
+(defn get-positions
+  [board]
+  (sort (filter #(number? %) (keys board))))
+
+(defn has-possible-moves?
+    "do any of the pegged positions have valid moves?
+    if not, game over"
+    [board]
+  (let [positions (get-positions board)
+        positions-with-moves (filter #(not-empty (valid-moves board %)) positions)]
+    ((comp boolean not-empty) positions-with-moves)))
+
+(defn has-possible-moves-2?
+  "Do any of the pegged positions have valid moves?
+    If not, game over"
+  [board]
+  (some (comp not-empty (partial valid-moves board))
+        (map first (filter #(get (second %) :pegged) board))))
+
+;; --- Displaying board ---
+(def alpha-start 97)
+(def alpha-end 123)
+(def letters (map (comp str char) (range alpha-start alpha-end)))
+(def pos-chars 3)
+
+(defn render-pos
+  [board pos]
+  (str (nth letters (dec pos))
+       (if (get-in board [pos :pegged])
+         "0"
+         "1")))
+
+(defn row-positions
+  "Return all positions in the given row"
+  [row-num]
+  ;; Accounts for the first row which does not have a predecessor
+  ;; row
+  (let [start (inc (or (row-tri-end (dec row-num)) 0))]
+    (range start (inc (row-tri-end row-num)))))
+
+(defn row-padding
+  "String of spaces to add to the beginning of a row to center it"
+  [row-num total-row-count]
+  (let [pad-length (/ (* (- total-row-count row-num) pos-chars) 2)]
+    (apply str (take pad-length (repeat " ")))))
+
+(defn render-row
+  [board row-num]
+  (str (row-padding row-num (:rows board))
+       (clojure.string/join " " (map (partial render-pos board) 
+                                     (row-positions row-num)))))
+(defn print-board
+  [board]
+  (doseq [row-num (range 1 (inc (:rows board)))]
+    (println (render-row board row-num))))
+
+;; Player interaction
+(defn letter->pos
+  "Converts a letter string to the corresponding position number"
+  [letter]
+  (inc (- (int (first letter)) alpha-start)))
+
+(defn get-input
+  "Waits for user to enter text and hit enter, then cleans the input"
+  ([] (get-input nil))
+  ([default]
+   (let [input (clojure.string/trim (read-line))]
+     (if (empty? input)
+       default
+       (clojure.string/lower-case input)))))
+
+(defn characters-as-strings [char] (str char))
+
+(declare user-entered-valid-move)
+(declare user-entered-invalid-move)
+(defn prompt-move
+  [board]
+  (println "\nHere's your board:")
+  (print-board board)
+  (println "Move from where to where? Enter two letters:")
+  (let [input (map letter->pos (characters-as-strings (get-input)))]
+    (if-let [new-board (make-move board (first input) (second input))]
+      (user-entered-valid-move new-board)
+      (user-entered-invalid-move board))))
+
+(defn prompt-empty-peg
+  [board]
+  (println "Here's your board:")
+  (print-board board)
+  (println "Remove which peg? [e]")
+  (prompt-move (remove-peg board (letter->pos (get-input "e")))))
+
+(defn prompt-rows
+  []
+  (println "How many rows? [5]")
+  (let [rows (Integer. (get-input 5))
+        board (new-board rows)]
+    (prompt-empty-peg board)))
+
+(defn game-over
+  "Announce the game is over and prompt to play again"
+  [board]
+  (let [remaining-pegs (count (filter :pegged (vals board)))]
+    (println "Game over! You had" remaining-pegs "pegs left:")
+    (print-board board)
+    (println "Play again? y/n [y]")
+    (let [input (get-input "y")]
+      (if (= "y" input)
+        (prompt-rows)
+        (do
+          (println "Bye!")
+          (System/exit 0))))))
+
+(defn user-entered-valid-move
+  "Handles the next step after a user has entered a valid move"
+  [board]
+  (if (has-possible-moves? board)
+    (prompt-move board)
+    (game-over board)))
+
+(defn user-entered-invalid-move
+  "Handles the next step after a user has entered an invalid move"
+  [board]
+  (println "\n!!! That was an invalid move :(\n")
+  (prompt-move board))
 
 ;; Tests
 (take 3 (next (next (next tri))))
@@ -150,11 +309,17 @@
 (connect-down-left {} 15 4)
 (connect-down-right {} 15 4)
 (add-pos {} 15 4)
-
-(let [some-board (new-board 5)]
-  some-board
-  ;; (println (pegged? some-board 1))
-  ;;(println (pegged? some-board 16))
-  )
-
-
+(new-board 5)
+;; (let [some-board (new-board 5)]
+;;   some-board
+;;   (println (pegged? some-board 1))
+;;   (println (pegged? some-board 16))
+;;   )
+(def test-board (remove-peg (new-board 5) 4))
+(valid-moves test-board 6)
+(valid-move? test-board 8 4)
+(make-move test-board 1 4)
+(make-move test-board 1 5)
+;; (has-possible-moves? test-board)
+;; (has-possible-moves? (new-board 5))
+(print-board test-board)
