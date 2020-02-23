@@ -26,7 +26,7 @@
   ([checked-terms [term & terms] precedence]
    (if (> precedence max-op-precedence)
      term
-     (if (nil? terms)
+     #dbg (if (nil? terms)
        ;; We are processing the last term. Just append to the checked terms
        ;; then start the next pass
        `(custom-infix-calculator [] ~(concat checked-terms [term]) ~(inc precedence))
@@ -44,4 +44,4 @@
                                        ~remaining-terms
                                        ~precedence))))))))
 
-(prn (custom-infix-calculator (5 + 10 * 2 - 30 / 2)))
+(custom-infix-calculator (5 + 10 * 2 - 30 / 2))
