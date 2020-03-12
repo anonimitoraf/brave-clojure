@@ -16,7 +16,6 @@
        (slurp)
        (str (engine query-by-engine))
        (slurp)))
-;; (println (search "9-input.txt" :ecosia))
 
 ;; Update your function so it takes a second argument consisting of the search
 ;; engines to use.
@@ -32,8 +31,6 @@
                result-promise
                (search input-file-path engine))))
     (deref result-promise 20000 "Timed out")))
-;; (println (search-multiple "9-input.txt" [:bing :ddg]))
-
 
 (def link-re #"(?<=href=[\"']).*?(?=[\"'])")
 
@@ -48,4 +45,10 @@
                                       engines))
         results (deref results-promise 20000 "Timed out")]
     (map (fn [r] (re-seq link-re r)) results)))
-(println (search-multiple-result-urls "9-input.txt" [:bing :ecosia]))
+
+(defn tests
+  []
+  (println (search "9-input.txt" :ecosia))
+  (println (search-multiple "9-input.txt" [:bing :ddg]))
+  (println (search-multiple-result-urls "9-input.txt" [:bing :ecosia])))
+;; (tests)
